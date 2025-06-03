@@ -75,7 +75,7 @@ export const ChatInterface = ({ onSongRecommend, onPlaylistUpdate }: ChatInterfa
 
       setMessages(prev => [...prev, botMessage]);
 
-      // Get song recommendations based on tone
+      // Get song recommendations from iTunes API
       const songs = await recommendSongs(tone, inputText);
       if (songs.length > 0) {
         // Update playlist
@@ -88,13 +88,24 @@ export const ChatInterface = ({ onSongRecommend, onPlaylistUpdate }: ChatInterfa
         
         const songMessage: Message = {
           id: (Date.now() + 2).toString(),
-          text: `🎵 Based on your ${tone} mood, I've added "${songs[0].title}" by ${songs[0].artist} to your playlist and started playing it! I also found ${songs.length - 1} more songs that match your vibe.`,
+          text: `🎵 Based on your ${tone} mood, I've found "${songs[0].title}" by ${songs[0].artist} and ${songs.length - 1} more songs! These are real song previews that you can play. Enjoy the music!`,
           sender: "bot",
           timestamp: new Date(),
         };
         
         setTimeout(() => {
           setMessages(prev => [...prev, songMessage]);
+        }, 1000);
+      } else {
+        const noSongsMessage: Message = {
+          id: (Date.now() + 2).toString(),
+          text: "I couldn't find songs for that mood right now. Try describing your feelings differently!",
+          sender: "bot",
+          timestamp: new Date(),
+        };
+        
+        setTimeout(() => {
+          setMessages(prev => [...prev, noSongsMessage]);
         }, 1000);
       }
 
