@@ -18,9 +18,10 @@ interface Message {
 
 interface ChatInterfaceProps {
   onSongRecommend: (song: any) => void;
+  onPlaylistUpdate?: (playlist: any[]) => void;
 }
 
-export const ChatInterface = ({ onSongRecommend }: ChatInterfaceProps) => {
+export const ChatInterface = ({ onSongRecommend, onPlaylistUpdate }: ChatInterfaceProps) => {
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "1",
@@ -31,6 +32,7 @@ export const ChatInterface = ({ onSongRecommend }: ChatInterfaceProps) => {
   ]);
   const [inputText, setInputText] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [currentPlaylist, setCurrentPlaylist] = useState<any[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -76,11 +78,17 @@ export const ChatInterface = ({ onSongRecommend }: ChatInterfaceProps) => {
       // Get song recommendations based on tone
       const songs = await recommendSongs(tone, inputText);
       if (songs.length > 0) {
+        // Update playlist
+        const newPlaylist = [...currentPlaylist, ...songs];
+        setCurrentPlaylist(newPlaylist);
+        onPlaylistUpdate?.(newPlaylist);
+        
+        // Set current song
         onSongRecommend(songs[0]);
         
         const songMessage: Message = {
           id: (Date.now() + 2).toString(),
-          text: `🎵 Based on your ${tone} mood, I recommend: "${songs[0].title}" by ${songs[0].artist}. Perfect for how you're feeling!`,
+          text: `🎵 Based on your ${tone} mood, I've added "${songs[0].title}" by ${songs[0].artist} to your playlist and started playing it! I also found ${songs.length - 1} more songs that match your vibe.`,
           sender: "bot",
           timestamp: new Date(),
         };
