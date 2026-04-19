@@ -19,11 +19,12 @@ interface MusicPlayerProps {
   currentSong: Song | null;
   playlist?: Song[];
   onSongChange?: (song: Song) => void;
+  isLiked?: boolean;
+  onToggleLike?: () => void;
 }
 
-export const MusicPlayer = ({ currentSong, playlist = [], onSongChange }: MusicPlayerProps) => {
+export const MusicPlayer = ({ currentSong, playlist = [], onSongChange, isLiked = false, onToggleLike }: MusicPlayerProps) => {
   const [isPlaying, setIsPlaying] = useState(false);
-  const [isLiked, setIsLiked] = useState(false);
   const [volume, setVolume] = useState([75]);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -249,7 +250,7 @@ export const MusicPlayer = ({ currentSong, playlist = [], onSongChange }: MusicP
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={() => setIsLiked(!isLiked)}
+                onClick={onToggleLike}
                 className={`text-white hover:bg-white/10 ${isLiked ? 'text-red-500' : ''}`}
               >
                 <Heart className={`w-5 h-5 ${isLiked ? 'fill-current' : ''}`} />
