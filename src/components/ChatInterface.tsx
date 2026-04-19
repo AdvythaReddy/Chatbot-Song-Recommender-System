@@ -22,18 +22,54 @@ interface ChatInterfaceProps {
 
 // Greetings / small talk that should NOT trigger recommendations
 const GREETING_PATTERNS = [
-  /^(hi|hii+|hey+|hello+|yo|sup|hola|howdy|heya)\b/i,
-  /^(good\s*(morning|afternoon|evening|night))\b/i,
-  /^(what'?s\s*up|wassup|how\s*are\s*you|how'?s\s*it\s*going)\b/i,
-  /^(thanks|thank\s*you|ty|ok|okay|cool|nice|great)\b\.?!?$/i,
+  /^(hi|hii+|hey+|hello+|yo|sup|hola|howdy|heya)[!,.?\s]*$/i,
+  /^(good\s*(morning|afternoon|evening|night))[!,.?\s]*$/i,
+  /^(what'?s\s*up|wassup|how\s*are\s*you|how'?s\s*it\s*going)[!,.?\s]*$/i,
 ];
 
+const CASUAL_PATTERNS = [
+  /^(ok|okay|cool|nice|great|fine|alright|hmm|hmmm|yeah|yep|nope|thanks|thank\s*you|ty)[!,.?\s]*$/i,
+];
+
+const EMOTION_PATTERNS = [
+  /\b(feel|feeling|felt|sad|down|low|depressed|hurt|broken|cry|happy|great|amazing|excited|thrilled|angry|mad|frustrated|annoyed|stressed|anxious|tired|lonely|overwhelmed)\b/i,
+];
+
+const normalizeText = (text: string) => text.trim().toLowerCase();
+
 const isGreeting = (text: string) => {
-  const trimmed = text.trim();
-  if (trimmed.split(/\s+/).length <= 3) {
-    return GREETING_PATTERNS.some((p) => p.test(trimmed));
+  const normalized = normalizeText(text);
+  return GREETING_PATTERNS.some((pattern) => pattern.test(normalized));
+};
+
+const isShortCasualMessage = (text: string) => {
+  const normalized = normalizeText(text);
+  const wordCount = normalized.split(/\s+/).filter(Boolean).length;
+
+  return (
+    wordCount <= 3 &&
+    CASUAL_PATTERNS.some((pattern) => pattern.test(normalized)) &&
+    !EMOTION_PATTERNS.some((pattern) => pattern.test(normalized))
+  );
+};
+
+const containsEmotionCue = (text: string) => {
+  const normalized = normalizeText(text);
+  return EMOTION_PATTERNS.some((pattern) => pattern.test(normalized));
+};
+
+const getGreetingResponse = (text: string) => {
+  const normalized = normalizeText(text);
+
+  if (/^hey+[!,.?\s]*$/i.test(normalized)) {
+    return "Hey, how are you feeling today?";
   }
-  return false;
+
+  if (/^hi[!,.?\s]*$/i.test(normalized) || /^hello[!,.?\s]*$/i.test(normalized)) {
+    return "Hi, how are you feeling today?";
+  }
+
+  return "Hey, how are you feeling today?";
 };
 
 // Conversational follow-up prompts based on detected tone
@@ -65,20 +101,13 @@ const FOLLOW_UPS: Record<string, string[]> = {
   ],
 };
 
-const GREETING_RESPONSES = [
-  "Hey there! 👋 How are you feeling today?",
-  "Hi! What's on your mind right now?",
-  "Hello! Tell me how your day is going.",
-  "Hey! I'm all ears — what's up with you today?",
-];
-
 const pick = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
 
 export const ChatInterface = ({ onSongRecommend, onPlaylistUpdate }: ChatInterfaceProps) => {
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "1",
-      text: "Hi! I'm your music companion 🎵 Let's chat for a bit — tell me how you're feeling or what's been going on. Once I get a sense of your vibe, I'll find the perfect songs for you!",
+      text: "Hi! I'm your music companion 🎵 Let's chat first — tell me how you're feeling, and once I understand your vibe after a few messages, I'll recommend songs.",
       sender: "bot",
       timestamp: new Date(),
     },
@@ -86,9 +115,9 @@ export const ChatInterface = ({ onSongRecommend, onPlaylistUpdate }: ChatInterfa
   const [inputText, setInputText] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [currentPlaylist, setCurrentPlaylist] = useState<any[]>([]);
-  // Conversation tracking for smarter recommendations
   const [userTurnCount, setUserTurnCount] = useState(0);
   const [detectedTones, setDetectedTones] = useState<string[]>([]);
+  const [emotionalTurnCount, setEmotionalTurnCount] = useState(0);
   const [hasRecommended, setHasRecommended] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -129,7 +158,7 @@ export const ChatInterface = ({ onSongRecommend, onPlaylistUpdate }: ChatInterfa
       );
       setHasRecommended(true);
     } else {
-      addBotMessage("Hmm, I couldn't find songs right now. Try telling me more about your mood!", undefined, 600);
+      addBotMessage("Hmm, I couldn't find songs right now. Try telling me a little more about how you're feeling.", undefined, 600);
     }
   };
 
@@ -137,20 +166,19 @@ export const ChatInterface = ({ onSongRecommend, onPlaylistUpdate }: ChatInterfa
     if (isLoading) return;
     setIsLoading(true);
     try {
-      // Use the most recent detected tone, fallback to neutral
       const tone = detectedTones[detectedTones.length - 1] || "neutral";
       await fetchAndPlaySongs(tone);
-    } catch (e) {
-      console.error(e);
+    } catch (error) {
+      console.error(error);
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleSendMessage = async () => {
-    if (!inputText.trim()) return;
+    const text = inputText.trim();
+    if (!text) return;
 
-    const text = inputText;
     const userMessage: Message = {
       id: Date.now().toString(),
       text,
@@ -166,42 +194,46 @@ export const ChatInterface = ({ onSongRecommend, onPlaylistUpdate }: ChatInterfa
     setUserTurnCount(newTurnCount);
 
     try {
-      // 1. Pure greeting / small talk → just chat back, never recommend
       if (isGreeting(text)) {
-        addBotMessage(pick(GREETING_RESPONSES));
+        addBotMessage(getGreetingResponse(text));
         setIsLoading(false);
         return;
       }
 
-      // 2. Analyze tone
+      if (isShortCasualMessage(text)) {
+        addBotMessage("I'm here with you — tell me a bit more about how you're feeling today.");
+        setIsLoading(false);
+        return;
+      }
+
       const tone = await analyzeTone(text);
       const updatedTones = [...detectedTones, tone];
       setDetectedTones(updatedTones);
-      console.log("Turn:", newTurnCount, "Tone:", tone, "History:", updatedTones);
 
-      // 3. Decide: keep chatting or recommend?
-      // Rules:
-      //  - Need at least 2 user turns before any recommendation
-      //  - Need a non-neutral tone detected at least once
-      //  - On turn 2+, if last 2 tones agree (and not neutral), recommend
-      //  - On turn 3+ with any clear tone, recommend
-      const nonNeutralTones = updatedTones.filter((t) => t !== "neutral");
-      const lastTwo = updatedTones.slice(-2);
-      const consistentTone =
-        lastTwo.length === 2 && lastTwo[0] === lastTwo[1] && lastTwo[0] !== "neutral";
+      const hasEmotionCue = containsEmotionCue(text) || tone !== "neutral";
+      const nextEmotionalTurnCount = emotionalTurnCount + (hasEmotionCue ? 1 : 0);
+      setEmotionalTurnCount(nextEmotionalTurnCount);
+
+      const nonNeutralTones = updatedTones.filter((detectedTone) => detectedTone !== "neutral");
+      const lastTwoNonNeutral = nonNeutralTones.slice(-2);
+      const repeatedMood =
+        lastTwoNonNeutral.length === 2 &&
+        lastTwoNonNeutral[0] === lastTwoNonNeutral[1];
 
       const shouldRecommend =
         !hasRecommended &&
-        ((newTurnCount >= 2 && consistentTone) ||
-          (newTurnCount >= 3 && nonNeutralTones.length > 0));
+        nextEmotionalTurnCount >= 2 &&
+        newTurnCount >= 2 &&
+        (repeatedMood || newTurnCount >= 3);
 
       if (shouldRecommend) {
         const finalTone = nonNeutralTones[nonNeutralTones.length - 1] || tone;
         addBotMessage(
-          `Thanks for sharing all that. I'm getting a clear ${finalTone} vibe from you — let me find some songs that fit. 🎶`,
+          `Thanks for telling me more. I think I understand your ${finalTone} vibe now, so I'll recommend something that fits. 🎶`,
           finalTone,
           500
         );
+
         setTimeout(async () => {
           await fetchAndPlaySongs(finalTone);
           setIsLoading(false);
@@ -209,9 +241,7 @@ export const ChatInterface = ({ onSongRecommend, onPlaylistUpdate }: ChatInterfa
         return;
       }
 
-      // 4. Otherwise, ask a follow-up question to keep the conversation going
-      const followUp = pick(FOLLOW_UPS[tone] || FOLLOW_UPS.neutral);
-      addBotMessage(followUp, tone);
+      addBotMessage(pick(FOLLOW_UPS[tone] || FOLLOW_UPS.neutral), tone);
       setIsLoading(false);
     } catch (error) {
       console.error("Error processing message:", error);
@@ -232,14 +262,16 @@ export const ChatInterface = ({ onSongRecommend, onPlaylistUpdate }: ChatInterfa
     }
   };
 
+  const canManuallyRecommend = userTurnCount >= 2 && detectedTones.some((tone) => tone !== "neutral");
+
   return (
     <Card className="h-full flex flex-col bg-black/40 backdrop-blur-sm border-white/20">
       <div className="p-4 border-b border-white/20 flex items-center justify-between">
         <div>
           <h2 className="text-xl font-semibold text-white">Chat with VibeCheck</h2>
-          <p className="text-gray-300 text-sm">Let's talk first — I'll recommend songs once I understand your vibe</p>
+          <p className="text-gray-300 text-sm">The chatbot talks first and only recommends after understanding your mood</p>
         </div>
-        {userTurnCount >= 1 && (
+        {canManuallyRecommend && (
           <Button
             size="sm"
             variant="outline"
