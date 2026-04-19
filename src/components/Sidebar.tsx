@@ -9,9 +9,10 @@ interface SidebarProps {
   onSectionChange: (section: string) => void;
   moodPlaylists: Record<string, any[]>;
   recentSongs: any[];
+  likedSongs?: any[];
 }
 
-export const Sidebar = ({ activeSection, onSectionChange, moodPlaylists, recentSongs }: SidebarProps) => {
+export const Sidebar = ({ activeSection, onSectionChange, moodPlaylists, recentSongs, likedSongs = [] }: SidebarProps) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
 
   const mainSections = [
