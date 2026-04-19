@@ -86,7 +86,7 @@ export const Sidebar = ({ activeSection, onSectionChange, moodPlaylists, recentS
               </div>
             </div>
 
-            <div className="mb-4">
+            <div className="mb-2">
               <Button
                 variant="ghost"
                 onClick={() => onSectionChange('recents')}
@@ -95,7 +95,10 @@ export const Sidebar = ({ activeSection, onSectionChange, moodPlaylists, recentS
                 }`}
               >
                 <Clock className="w-5 h-5 mr-3" />
-                <span>Recently Played</span>
+                <span className="flex-1 text-left">Recently Played</span>
+                {recentSongs.length > 0 && (
+                  <span className="text-xs text-gray-400">{recentSongs.length}</span>
+                )}
               </Button>
             </div>
 
@@ -107,8 +110,11 @@ export const Sidebar = ({ activeSection, onSectionChange, moodPlaylists, recentS
                   activeSection === 'liked' ? 'bg-white/20' : ''
                 }`}
               >
-                <Heart className="w-5 h-5 mr-3" />
-                <span>Liked Songs</span>
+                <Heart className={`w-5 h-5 mr-3 ${likedSongs.length > 0 ? 'text-red-500 fill-current' : ''}`} />
+                <span className="flex-1 text-left">Liked Songs</span>
+                {likedSongs.length > 0 && (
+                  <span className="text-xs text-gray-400">{likedSongs.length}</span>
+                )}
               </Button>
             </div>
           </>
