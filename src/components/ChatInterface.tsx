@@ -210,37 +210,29 @@ export const ChatInterface = ({ onSongRecommend, onPlaylistUpdate }: ChatInterfa
       const updatedTones = [...detectedTones, tone];
       setDetectedTones(updatedTones);
 
-      const hasEmotionCue = containsEmotionCue(text) || tone !== "neutral";
-      const nextEmotionalTurnCount = emotionalTurnCount + (hasEmotionCue ? 1 : 0);
-      setEmotionalTurnCount(nextEmotionalTurnCount);
+      const nonNeutralTones = updatedTones.filter((t) => t !== "neutral");
 
-      const nonNeutralTones = updatedTones.filter((detectedTone) => detectedTone !== "neutral");
-      const lastTwoNonNeutral = nonNeutralTones.slice(-2);
-      const repeatedMood =
-        lastTwoNonNeutral.length === 2 &&
-        lastTwoNonNeutral[0] === lastTwoNonNeutral[1];
-
+      // Recommend ASAP: as soon as we have any clear mood, OR by turn 2 regardless
       const shouldRecommend =
         !hasRecommended &&
-        nextEmotionalTurnCount >= 2 &&
-        newTurnCount >= 2 &&
-        (repeatedMood || newTurnCount >= 3);
+        (nonNeutralTones.length >= 1 || newTurnCount >= 2);
 
       if (shouldRecommend) {
-        const finalTone = nonNeutralTones[nonNeutralTones.length - 1] || tone;
+        const finalTone = nonNeutralTones[nonNeutralTones.length - 1] || tone || "neutral";
         addBotMessage(
-          `Thanks for telling me more. I think I understand your ${finalTone} vibe now, so I'll recommend something that fits. 🎶`,
+          `Got it — I'm picking up a ${finalTone} vibe. Here are some songs for you. 🎶`,
           finalTone,
-          500
+          400
         );
 
         setTimeout(async () => {
           await fetchAndPlaySongs(finalTone);
           setIsLoading(false);
-        }, 1200);
+        }, 900);
         return;
       }
 
+      // Only one short follow-up on turn 1 if mood is unclear
       addBotMessage(pick(FOLLOW_UPS[tone] || FOLLOW_UPS.neutral), tone);
       setIsLoading(false);
     } catch (error) {
