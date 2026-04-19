@@ -10,7 +10,7 @@ const Index = () => {
   const [currentSong, setCurrentSong] = useState(null);
   const [playlist, setPlaylist] = useState([]);
   const [activeSection, setActiveSection] = useState("chat");
-  const [moodPlaylists, setMoodPlaylists] = useState({});
+  const [moodPlaylists, setMoodPlaylists] = useState<Record<string, any[]>>({});
   const [recentSongs, setRecentSongs] = useState([]);
   const [likedSongs, setLikedSongs] = useState([]);
 

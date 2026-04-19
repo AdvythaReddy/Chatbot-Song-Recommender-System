@@ -7,7 +7,7 @@ import { Home, Search, Library, Heart, Clock, Music, MessageCircle, Plus, List }
 interface SidebarProps {
   activeSection: string;
   onSectionChange: (section: string) => void;
-  moodPlaylists: any[];
+  moodPlaylists: Record<string, any[]>;
   recentSongs: any[];
 }
 
