@@ -1,9 +1,8 @@
-
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
-import { Send, User, Bot } from "lucide-react";
+import { Send, User, Bot, Music } from "lucide-react";
 import { analyzeTone } from "@/services/toneAnalyzer";
 import { recommendSongs } from "@/services/musicRecommender";
 import { toast } from "@/hooks/use-toast";
@@ -21,11 +20,65 @@ interface ChatInterfaceProps {
   onPlaylistUpdate?: (playlist: any[]) => void;
 }
 
+// Greetings / small talk that should NOT trigger recommendations
+const GREETING_PATTERNS = [
+  /^(hi|hii+|hey+|hello+|yo|sup|hola|howdy|heya)\b/i,
+  /^(good\s*(morning|afternoon|evening|night))\b/i,
+  /^(what'?s\s*up|wassup|how\s*are\s*you|how'?s\s*it\s*going)\b/i,
+  /^(thanks|thank\s*you|ty|ok|okay|cool|nice|great)\b\.?!?$/i,
+];
+
+const isGreeting = (text: string) => {
+  const trimmed = text.trim();
+  if (trimmed.split(/\s+/).length <= 3) {
+    return GREETING_PATTERNS.some((p) => p.test(trimmed));
+  }
+  return false;
+};
+
+// Conversational follow-up prompts based on detected tone
+const FOLLOW_UPS: Record<string, string[]> = {
+  happy: [
+    "That's lovely to hear! 😊 What's putting you in such a good mood?",
+    "Tell me more — what made today special?",
+    "I love that energy! Anything in particular you're celebrating?",
+  ],
+  sad: [
+    "I'm sorry you're feeling that way. 💙 Do you want to talk about what's going on?",
+    "That sounds tough. What's been weighing on your mind?",
+    "I'm here to listen. Is there something specific that brought this on?",
+  ],
+  angry: [
+    "That sounds really frustrating. What happened?",
+    "I hear you. Want to vent a bit about it?",
+    "Ugh, that's rough. Tell me more about what's bothering you.",
+  ],
+  excited: [
+    "Yes! Tell me everything — what's got you so hyped? 🎉",
+    "I love this energy! What's the big news?",
+    "Spill the details! What's going on?",
+  ],
+  neutral: [
+    "Got it. How has your day been overall?",
+    "Tell me a bit more — what's on your mind?",
+    "I'm listening. What else is going on with you?",
+  ],
+};
+
+const GREETING_RESPONSES = [
+  "Hey there! 👋 How are you feeling today?",
+  "Hi! What's on your mind right now?",
+  "Hello! Tell me how your day is going.",
+  "Hey! I'm all ears — what's up with you today?",
+];
+
+const pick = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
+
 export const ChatInterface = ({ onSongRecommend, onPlaylistUpdate }: ChatInterfaceProps) => {
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "1",
-      text: "Hi! I'm your music companion. Tell me how you're feeling or what's on your mind, and I'll recommend some songs that match your vibe! 🎵",
+      text: "Hi! I'm your music companion 🎵 Let's chat for a bit — tell me how you're feeling or what's been going on. Once I get a sense of your vibe, I'll find the perfect songs for you!",
       sender: "bot",
       timestamp: new Date(),
     },
@@ -33,6 +86,10 @@ export const ChatInterface = ({ onSongRecommend, onPlaylistUpdate }: ChatInterfa
   const [inputText, setInputText] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [currentPlaylist, setCurrentPlaylist] = useState<any[]>([]);
+  // Conversation tracking for smarter recommendations
+  const [userTurnCount, setUserTurnCount] = useState(0);
+  const [detectedTones, setDetectedTones] = useState<string[]>([]);
+  const [hasRecommended, setHasRecommended] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -43,72 +100,119 @@ export const ChatInterface = ({ onSongRecommend, onPlaylistUpdate }: ChatInterfa
     scrollToBottom();
   }, [messages]);
 
+  const addBotMessage = (text: string, tone?: string, delay = 600) => {
+    setTimeout(() => {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: Date.now().toString() + Math.random(),
+          text,
+          sender: "bot",
+          timestamp: new Date(),
+          tone,
+        },
+      ]);
+    }, delay);
+  };
+
+  const fetchAndPlaySongs = async (tone: string) => {
+    const songs = await recommendSongs(tone, "");
+    if (songs.length > 0) {
+      const newPlaylist = [...currentPlaylist, ...songs];
+      setCurrentPlaylist(newPlaylist);
+      onPlaylistUpdate?.(newPlaylist);
+      onSongRecommend(songs[0]);
+      addBotMessage(
+        `🎵 Based on your ${tone} vibe, I picked "${songs[0].title}" by ${songs[0].artist} and ${songs.length - 1} more. Hit play and enjoy!`,
+        undefined,
+        800
+      );
+      setHasRecommended(true);
+    } else {
+      addBotMessage("Hmm, I couldn't find songs right now. Try telling me more about your mood!", undefined, 600);
+    }
+  };
+
+  const handleManualRecommend = async () => {
+    if (isLoading) return;
+    setIsLoading(true);
+    try {
+      // Use the most recent detected tone, fallback to neutral
+      const tone = detectedTones[detectedTones.length - 1] || "neutral";
+      await fetchAndPlaySongs(tone);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleSendMessage = async () => {
     if (!inputText.trim()) return;
 
+    const text = inputText;
     const userMessage: Message = {
       id: Date.now().toString(),
-      text: inputText,
+      text,
       sender: "user",
       timestamp: new Date(),
     };
 
-    setMessages(prev => [...prev, userMessage]);
+    setMessages((prev) => [...prev, userMessage]);
     setInputText("");
     setIsLoading(true);
 
+    const newTurnCount = userTurnCount + 1;
+    setUserTurnCount(newTurnCount);
+
     try {
-      // Analyze tone of the message
-      const tone = await analyzeTone(inputText);
-      console.log("Detected tone:", tone);
-
-      // Generate bot response based on tone
-      const botResponse = generateBotResponse(tone, inputText);
-      
-      const botMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        text: botResponse,
-        sender: "bot",
-        timestamp: new Date(),
-        tone,
-      };
-
-      setMessages(prev => [...prev, botMessage]);
-
-      // Get song recommendations from iTunes API
-      const songs = await recommendSongs(tone, inputText);
-      if (songs.length > 0) {
-        // Update playlist
-        const newPlaylist = [...currentPlaylist, ...songs];
-        setCurrentPlaylist(newPlaylist);
-        onPlaylistUpdate?.(newPlaylist);
-        
-        // Set current song
-        onSongRecommend(songs[0]);
-        
-        const songMessage: Message = {
-          id: (Date.now() + 2).toString(),
-          text: `🎵 Based on your ${tone} mood, I've found "${songs[0].title}" by ${songs[0].artist} and ${songs.length - 1} more songs! These are real song previews that you can play. Enjoy the music!`,
-          sender: "bot",
-          timestamp: new Date(),
-        };
-        
-        setTimeout(() => {
-          setMessages(prev => [...prev, songMessage]);
-        }, 1000);
-      } else {
-        const noSongsMessage: Message = {
-          id: (Date.now() + 2).toString(),
-          text: "I couldn't find songs for that mood right now. Try describing your feelings differently!",
-          sender: "bot",
-          timestamp: new Date(),
-        };
-        
-        setTimeout(() => {
-          setMessages(prev => [...prev, noSongsMessage]);
-        }, 1000);
+      // 1. Pure greeting / small talk → just chat back, never recommend
+      if (isGreeting(text)) {
+        addBotMessage(pick(GREETING_RESPONSES));
+        setIsLoading(false);
+        return;
       }
 
+      // 2. Analyze tone
+      const tone = await analyzeTone(text);
+      const updatedTones = [...detectedTones, tone];
+      setDetectedTones(updatedTones);
+      console.log("Turn:", newTurnCount, "Tone:", tone, "History:", updatedTones);
+
+      // 3. Decide: keep chatting or recommend?
+      // Rules:
+      //  - Need at least 2 user turns before any recommendation
+      //  - Need a non-neutral tone detected at least once
+      //  - On turn 2+, if last 2 tones agree (and not neutral), recommend
+      //  - On turn 3+ with any clear tone, recommend
+      const nonNeutralTones = updatedTones.filter((t) => t !== "neutral");
+      const lastTwo = updatedTones.slice(-2);
+      const consistentTone =
+        lastTwo.length === 2 && lastTwo[0] === lastTwo[1] && lastTwo[0] !== "neutral";
+
+      const shouldRecommend =
+        !hasRecommended &&
+        ((newTurnCount >= 2 && consistentTone) ||
+          (newTurnCount >= 3 && nonNeutralTones.length > 0));
+
+      if (shouldRecommend) {
+        const finalTone = nonNeutralTones[nonNeutralTones.length - 1] || tone;
+        addBotMessage(
+          `Thanks for sharing all that. I'm getting a clear ${finalTone} vibe from you — let me find some songs that fit. 🎶`,
+          finalTone,
+          500
+        );
+        setTimeout(async () => {
+          await fetchAndPlaySongs(finalTone);
+          setIsLoading(false);
+        }, 1200);
+        return;
+      }
+
+      // 4. Otherwise, ask a follow-up question to keep the conversation going
+      const followUp = pick(FOLLOW_UPS[tone] || FOLLOW_UPS.neutral);
+      addBotMessage(followUp, tone);
+      setIsLoading(false);
     } catch (error) {
       console.error("Error processing message:", error);
       toast({
@@ -116,51 +220,9 @@ export const ChatInterface = ({ onSongRecommend, onPlaylistUpdate }: ChatInterfa
         description: "Something went wrong. Please try again.",
         variant: "destructive",
       });
-      
-      const errorMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        text: "I'm having trouble understanding right now. Could you try rephrasing that?",
-        sender: "bot",
-        timestamp: new Date(),
-      };
-      
-      setMessages(prev => [...prev, errorMessage]);
-    } finally {
+      addBotMessage("I'm having trouble understanding right now. Could you try rephrasing that?");
       setIsLoading(false);
     }
-  };
-
-  const generateBotResponse = (tone: string, userMessage: string): string => {
-    const responses = {
-      happy: [
-        "That's wonderful! I can feel the positive energy in your message! 😊",
-        "I love your enthusiasm! It's contagious! ✨",
-        "Your happiness is radiating through the screen! 🌟"
-      ],
-      sad: [
-        "I hear you, and I'm here for you. Sometimes music can help us process these feelings. 💙",
-        "It sounds like you're going through a tough time. Let me find something that might comfort you. 🤗",
-        "I understand. Music has a way of helping us feel less alone. 💜"
-      ],
-      angry: [
-        "I can sense the intensity in your message. Sometimes we need music that matches our energy. 🔥",
-        "Strong emotions deserve powerful music. Let me find something that fits. ⚡",
-        "I get it - sometimes we need to feel our feelings fully. Music can help with that. 💪"
-      ],
-      neutral: [
-        "Thanks for sharing! Let me find something that might brighten your day. 🎵",
-        "I'm listening! Music can often help us discover how we're really feeling. 🎶",
-        "Interesting! Let me pick something that might resonate with you. 🎼"
-      ],
-      excited: [
-        "Your excitement is infectious! I love the energy! 🚀",
-        "Wow, I can feel your enthusiasm! This calls for some upbeat tunes! 🎉",
-        "That energy is amazing! Let's find music that matches it! ⚡"
-      ]
-    };
-
-    const toneResponses = responses[tone as keyof typeof responses] || responses.neutral;
-    return toneResponses[Math.floor(Math.random() * toneResponses.length)];
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -172,11 +234,25 @@ export const ChatInterface = ({ onSongRecommend, onPlaylistUpdate }: ChatInterfa
 
   return (
     <Card className="h-full flex flex-col bg-black/40 backdrop-blur-sm border-white/20">
-      <div className="p-4 border-b border-white/20">
-        <h2 className="text-xl font-semibold text-white">Chat with VibeCheck</h2>
-        <p className="text-gray-300 text-sm">Share your feelings and get personalized music recommendations</p>
+      <div className="p-4 border-b border-white/20 flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-semibold text-white">Chat with VibeCheck</h2>
+          <p className="text-gray-300 text-sm">Let's talk first — I'll recommend songs once I understand your vibe</p>
+        </div>
+        {userTurnCount >= 1 && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleManualRecommend}
+            disabled={isLoading}
+            className="bg-white/10 border-white/20 text-white hover:bg-white/20"
+          >
+            <Music className="w-4 h-4 mr-1" />
+            Recommend now
+          </Button>
+        )}
       </div>
-      
+
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.map((message) => (
           <div
